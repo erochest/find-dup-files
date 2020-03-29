@@ -9,8 +9,11 @@ edition = "2018"
 [dependencies]
 clap-verbosity-flag = "*"
 confy = "*"
+crossbeam = "0.7.3"
+crossbeam-channel = "0.4.2"
 env_logger = "*"
 log = "*"
+ring = "0.17.0-alpha.1"
 structopt = "*"
 
 [dev-dependencies]
