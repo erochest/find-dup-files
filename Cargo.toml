@@ -1,0 +1,24 @@
+[package]
+name = "find-dup-files"
+version = "0.1.0"
+authors = ["Eric Rochester <erochest@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap-verbosity-flag = "*"
+confy = "*"
+env_logger = "*"
+log = "*"
+structopt = "*"
+
+[dev-dependencies]
+assert_cmd = "*"
+# assert_fs = "*"
+# dir-diff = "*"
+# duct = "*"
+# predicates = "*"
+# rexpect = "*"
+spectral = "*"
+# tempfile = "*"
