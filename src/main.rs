@@ -1,16 +1,27 @@
+use std::path::PathBuf;
+use std::result;
+use std::str::FromStr;
+
 use clap_verbosity_flag::Verbosity;
-use env_logger;
+use env_logger::Builder;
+use log::{info, Level};
 use structopt::StructOpt;
+use walkdir::WalkDir;
 
 mod error;
 
 use error::Result;
 
 fn main() -> Result<()> {
-    env_logger::init();
     let args = Cli::from_args();
 
-    println!("{:?}", args);
+    Builder::new()
+        .filter_level(args.verbose.log_level().unwrap_or(Level::Warn).to_level_filter())
+        .init();
+
+    for entry in WalkDir::new(&args.directory) {
+        info!("{}", entry?.path().display());
+    }
 
     Ok(())
 }
@@ -19,6 +30,28 @@ fn main() -> Result<()> {
 struct Cli {
     #[structopt(flatten)]
     verbose: Verbosity,
+
+    #[structopt(short, long, parse(from_os_str))]
+    directory: PathBuf,
+
+    #[structopt(long)]
+    action: Option<Action>,
+}
+
+#[derive(Debug)]
+enum Action {
+    List,
+}
+
+impl FromStr for Action {
+    type Err = error::Error;
+
+    fn from_str(s: &str) -> result::Result<Self, Self::Err> {
+        match s {
+            "list" => Ok(Action::List),
+            _ => Err(error::Error::CliParseError(format!("Invalid actuon: {}", s))),
+        }
+    }
 }
 
 // # Planning

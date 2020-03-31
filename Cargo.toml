@@ -15,6 +15,7 @@ env_logger = "*"
 log = "*"
 ring = "0.17.0-alpha.1"
 structopt = "*"
+walkdir = "2.3.1"
 
 [dev-dependencies]
 assert_cmd = "*"
