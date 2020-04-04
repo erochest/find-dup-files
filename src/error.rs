@@ -4,9 +4,6 @@ use std::fmt;
 use std::io;
 use std::result;
 
-use rusqlite;
-use walkdir;
-
 pub type Result<R> = result::Result<R, Error>;
 
 #[derive(Debug)]

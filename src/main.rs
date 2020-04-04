@@ -29,8 +29,8 @@ fn main() -> Result<()> {
 
     let cxn = args
         .storage
-        .map(|filename| Connection::open(filename))
-        .unwrap_or_else(|| Connection::open_in_memory())?;
+        .map(Connection::open)
+        .unwrap_or_else(Connection::open_in_memory)?;
     cxn.execute(
         "CREATE TABLE hash (id INTEGER PRIMARY KEY, hash TEXT UNIQUE)",
         params![],
