@@ -4,6 +4,7 @@ use std::fmt;
 use std::io;
 use std::result;
 
+use rusqlite;
 use walkdir;
 
 pub type Result<R> = result::Result<R, Error>;
@@ -12,7 +13,7 @@ pub type Result<R> = result::Result<R, Error>;
 pub enum Error {
     IoError(io::Error),
     WalkDirError(walkdir::Error),
-    CliParseError(String),
+    StorageError(rusqlite::Error),
 }
 
 use Error::*;
@@ -22,7 +23,7 @@ impl fmt::Display for Error {
         match self {
             IoError(ref err) => err.fmt(f),
             WalkDirError(ref err) => err.fmt(f),
-            CliParseError(ref msg) => write!(f, "CLI parse error: {}", msg),
+            StorageError(ref err) => err.fmt(f),
         }
     }
 }
@@ -39,5 +40,11 @@ impl From<io::Error> for Error {
 impl From<walkdir::Error> for Error {
     fn from(err: walkdir::Error) -> Error {
         WalkDirError(err)
+    }
+}
+
+impl From<rusqlite::Error> for Error {
+    fn from(err: rusqlite::Error) -> Error {
+        StorageError(err)
     }
 }

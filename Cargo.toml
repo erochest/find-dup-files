@@ -15,6 +15,7 @@ data-encoding = "2.2.0"
 env_logger = "*"
 log = "*"
 ring = "0.17.0-alpha.1"
+rusqlite = "0.21.0"
 structopt = "*"
 walkdir = "2.3.1"
 
