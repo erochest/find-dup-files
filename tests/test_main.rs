@@ -35,11 +35,14 @@ fn test_help() {
 fn test_hashes_files() {
     let stderr = run_return_stderr(&["-vvv", "--directory", "tests/fixtures"]);
     assert_that(&stderr).contains("i-measure-every-grief-i-meet\t36b99c2909e5ecdaf9db08544e134d7165f890f03fba29934c3eafdc67a26ec5");
-    assert_that(&stderr).contains("im-nobody-who-are-you\t12cfa77c4b4d8d493fdde29cf0856b2f8f09082c5c47788ad270001a983d9dc5");
+    assert_that(&stderr).contains(
+        "im-nobody-who-are-you\t12cfa77c4b4d8d493fdde29cf0856b2f8f09082c5c47788ad270001a983d9dc5",
+    );
 }
 
 #[test]
 fn test_finds_duplicate_files() {
     let stderr = run_return_stderr(&["-vv", "--directory", "tests/fixtures"]);
-    assert_that(&stderr).contains("i-measure-every-copy\ttests/fixtures/i-measure-every-grief-i-meet");
+    assert_that(&stderr)
+        .contains("i-measure-every-copy\ttests/fixtures/i-measure-every-grief-i-meet");
 }

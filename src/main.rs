@@ -19,10 +19,16 @@ fn main() -> Result<()> {
     let args = Cli::from_args();
 
     Builder::new()
-        .filter_level(args.verbose.log_level().unwrap_or(Level::Warn).to_level_filter())
+        .filter_level(
+            args.verbose
+                .log_level()
+                .unwrap_or(Level::Warn)
+                .to_level_filter(),
+        )
         .init();
 
-    let cxn = args.storage
+    let cxn = args
+        .storage
         .map(|filename| Connection::open(filename))
         .unwrap_or_else(|| Connection::open_in_memory())?;
     cxn.execute(
@@ -64,13 +70,14 @@ fn main() -> Result<()> {
 
         let pathname = entry.path().to_string_lossy().to_string();
         let hash = HEXLOWER.encode(digest.as_ref());
-        debug!("{}\t{}", pathname, hash); 
+        debug!("{}\t{}", pathname, hash);
 
-        cxn.execute("INSERT OR IGNORE INTO hash (hash) VALUES (?1)", params![hash])?;
+        cxn.execute(
+            "INSERT OR IGNORE INTO hash (hash) VALUES (?1)",
+            params![hash],
+        )?;
         let mut stmt = cxn.prepare("SELECT id FROM hash WHERE hash=?1")?;
-        let hash_id: u32 = stmt.query_row(params![hash], |row| {
-            row.get(0)
-        })?;
+        let hash_id: u32 = stmt.query_row(params![hash], |row| row.get(0))?;
         cxn.execute(
             "INSERT INTO file (hash_id, pathname) VALUES (?1, ?2)",
             params![hash_id, pathname],
@@ -80,7 +87,7 @@ fn main() -> Result<()> {
     let mut stmt = cxn.prepare(
         "SELECT hash_id, pathname
         FROM file
-        ORDER BY hash_id, pathname"
+        ORDER BY hash_id, pathname",
     )?;
 
     let hash_paths = stmt.query_map(params![], |row| {
@@ -123,11 +130,20 @@ struct Cli {
     #[structopt(short, long, parse(from_os_str))]
     directory: PathBuf,
 
-    #[structopt(short, long, default_value = "1024", help = "The size of the read buffer.")]
+    #[structopt(
+        short,
+        long,
+        default_value = "1024",
+        help = "The size of the read buffer."
+    )]
     read_buffer: usize,
 
-    #[structopt(short, long, parse(from_os_str),
-                help = "The location of the database to store file hashes. Defaults to in-memory.")]
+    #[structopt(
+        short,
+        long,
+        parse(from_os_str),
+        help = "The location of the database to store file hashes. Defaults to in-memory."
+    )]
     storage: Option<PathBuf>,
 }
 
