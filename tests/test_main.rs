@@ -46,3 +46,10 @@ fn test_finds_duplicate_files() {
     assert_that(&stderr)
         .contains("i-measure-every-copy\ttests/fixtures/i-measure-every-grief-i-meet");
 }
+
+#[test]
+fn test_lists_last_duplicate_files() {
+    let stderr = run_return_stderr(&["-vv", "--directory", "tests/fixtures"]);
+    assert_that(&stderr)
+        .contains("tests/fixtures/im-nobody-who-are-you\ttests/fixtures/im-nobody-who-are-you-2");
+}

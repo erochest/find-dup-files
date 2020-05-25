@@ -6,7 +6,7 @@ use std::result;
 use clap_verbosity_flag::Verbosity;
 use data_encoding::HEXLOWER;
 use env_logger::Builder;
-use log::{debug, info, Level};
+use log::{debug, info, trace, Level};
 use ring::digest;
 use rusqlite::{params, Connection};
 use structopt::StructOpt;
@@ -144,6 +144,7 @@ fn read_hash_paths(cxn: &Connection) -> Result<Vec<(u32, String)>> {
     let hash_paths = stmt.query_map(params![], |row| {
         let hash_id: u32 = row.get(0)?;
         let path: String = row.get(1)?;
+        trace!("retrieving {} / {}", hash_id, path);
         Ok((hash_id, path))
     })?
     .collect::<result::Result<Vec<(u32, String)>, _>>()?;
@@ -174,7 +175,10 @@ fn report_duplicate_files(hash_paths: Vec<(u32, String)>) {
         }
     }
 
-    // TODO: we're not showing anything left in the buffer.
+    if path_buffer.len() > 1 {
+        path_buffer.sort();
+        info!("{}", path_buffer.join("\t"));
+    }
 }
 
 // # Planning
