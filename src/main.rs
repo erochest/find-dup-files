@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap_verbosity_flag::Verbosity;
 use data_encoding::HEXLOWER;
@@ -31,18 +31,7 @@ fn main() -> Result<()> {
         .storage
         .map(Connection::open)
         .unwrap_or_else(Connection::open_in_memory)?;
-    cxn.execute(
-        "CREATE TABLE hash (id INTEGER PRIMARY KEY, hash TEXT UNIQUE)",
-        params![],
-    )?;
-    cxn.execute(
-        "CREATE TABLE file (
-            id INTEGER PRIMARY KEY,
-            hash_id INTEGER,
-            pathname TEKT UNIQUE
-            )",
-        params![],
-    )?;
+    create_database(&cxn)?;
 
     for entry in WalkDir::new(&args.directory) {
         let entry = entry?;
@@ -51,37 +40,10 @@ fn main() -> Result<()> {
             continue;
         }
 
-        let mut context = digest::Context::new(&digest::SHA256);
         let mut file = File::open(entry.path())?;
-        let mut buffer = Vec::with_capacity(args.read_buffer);
+        let digest = hash_reader(&mut file, args.read_buffer)?;
 
-        loop {
-            buffer.resize(args.read_buffer, 0);
-            let size = file.read(buffer.as_mut_slice())?;
-            if size == 0 {
-                break;
-            }
-            buffer.resize(size, 0);
-
-            context.update(&buffer);
-        }
-
-        let digest = context.finish();
-
-        let pathname = entry.path().to_string_lossy().to_string();
-        let hash = HEXLOWER.encode(digest.as_ref());
-        debug!("{}\t{}", pathname, hash);
-
-        cxn.execute(
-            "INSERT OR IGNORE INTO hash (hash) VALUES (?1)",
-            params![hash],
-        )?;
-        let mut stmt = cxn.prepare("SELECT id FROM hash WHERE hash=?1")?;
-        let hash_id: u32 = stmt.query_row(params![hash], |row| row.get(0))?;
-        cxn.execute(
-            "INSERT INTO file (hash_id, pathname) VALUES (?1, ?2)",
-            params![hash_id, pathname],
-        )?;
+        store_hash(&cxn, entry.path(), &digest)?;
     }
 
     let mut stmt = cxn.prepare(
@@ -145,6 +107,60 @@ struct Cli {
         help = "The location of the database to store file hashes. Defaults to in-memory."
     )]
     storage: Option<PathBuf>,
+}
+
+fn create_database(cxn: &Connection) -> Result<()> {
+    cxn.execute(
+        "CREATE TABLE hash (id INTEGER PRIMARY KEY, hash TEXT UNIQUE)",
+        params![],
+    )?;
+    cxn.execute(
+        "CREATE TABLE file (
+            id INTEGER PRIMARY KEY,
+            hash_id INTEGER,
+            pathname TEKT UNIQUE
+            )",
+        params![],
+    )?;
+
+    Ok(())
+}
+
+fn hash_reader<R: Read>(reader: &mut R, capacity: usize) -> Result<digest::Digest> {
+    let mut context = digest::Context::new(&digest::SHA256);
+    let mut buffer = Vec::with_capacity(capacity);
+
+    loop {
+        buffer.resize(capacity, 0);
+        let size = reader.read(buffer.as_mut_slice())?;
+        if size == 0 {
+            break;
+        }
+        buffer.resize(size, 0);
+
+        context.update(&buffer);
+    }
+
+    Ok(context.finish())
+}
+
+fn store_hash(cxn: &Connection, path: &Path, digest: &digest::Digest) -> Result<()> {
+    let pathname = path.to_string_lossy().to_string();
+    let hash = HEXLOWER.encode(digest.as_ref());
+    debug!("{}\t{}", pathname, hash);
+
+    cxn.execute(
+        "INSERT OR IGNORE INTO hash (hash) VALUES (?1)",
+        params![hash],
+    )?;
+    let mut stmt = cxn.prepare("SELECT id FROM hash WHERE hash=?1")?;
+    let hash_id: u32 = stmt.query_row(params![hash], |row| row.get(0))?;
+    cxn.execute(
+        "INSERT INTO file (hash_id, pathname) VALUES (?1, ?2)",
+        params![hash_id, pathname],
+    )?;
+
+    Ok(())
 }
 
 // # Planning
