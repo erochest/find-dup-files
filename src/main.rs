@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::result;
 
 use clap_verbosity_flag::Verbosity;
 use data_encoding::HEXLOWER;
@@ -46,23 +47,11 @@ fn main() -> Result<()> {
         store_hash(&cxn, entry.path(), &digest)?;
     }
 
-    let mut stmt = cxn.prepare(
-        "SELECT hash_id, pathname
-        FROM file
-        ORDER BY hash_id, pathname",
-    )?;
-
-    let hash_paths = stmt.query_map(params![], |row| {
-        let hash_id: u32 = row.get(0)?;
-        let path: String = row.get(1)?;
-        Ok((hash_id, path))
-    })?;
+    let hash_paths = read_hash_paths(&cxn)?;
 
     let mut current_hash_id = None;
     let mut path_buffer = vec![];
-    for pair in hash_paths {
-        let (hash_id, path) = pair?;
-
+    for (hash_id, path) in hash_paths {
         if let Some(current) = current_hash_id {
             if current == hash_id {
                 path_buffer.push(path);
@@ -161,6 +150,23 @@ fn store_hash(cxn: &Connection, path: &Path, digest: &digest::Digest) -> Result<
     )?;
 
     Ok(())
+}
+
+fn read_hash_paths(cxn: &Connection) -> Result<Vec<(u32, String)>> {
+    let mut stmt = cxn.prepare(
+        "SELECT hash_id, pathname
+        FROM file
+        ORDER BY hash_id, pathname",
+    )?;
+
+    let hash_paths = stmt.query_map(params![], |row| {
+        let hash_id: u32 = row.get(0)?;
+        let path: String = row.get(1)?;
+        Ok((hash_id, path))
+    })?
+    .collect::<result::Result<Vec<(u32, String)>, _>>()?;
+
+    Ok(hash_paths)
 }
 
 // # Planning
