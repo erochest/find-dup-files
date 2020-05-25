@@ -49,29 +49,11 @@ fn main() -> Result<()> {
 
     let hash_paths = read_hash_paths(&cxn)?;
 
-    let mut current_hash_id = None;
-    let mut path_buffer = vec![];
-    for (hash_id, path) in hash_paths {
-        if let Some(current) = current_hash_id {
-            if current == hash_id {
-                path_buffer.push(path);
-            } else {
-                if path_buffer.len() > 1 {
-                    path_buffer.sort();
-                    info!("{}", path_buffer.join("\t"));
-                }
-
-                current_hash_id = Some(hash_id);
-                path_buffer = vec![path];
-            }
-        } else {
-            current_hash_id = Some(hash_id);
-            path_buffer.push(path);
-        }
-    }
+    report_duplicate_files(hash_paths);
 
     Ok(())
 }
+
 
 #[derive(Debug, StructOpt)]
 struct Cli {
@@ -167,6 +149,32 @@ fn read_hash_paths(cxn: &Connection) -> Result<Vec<(u32, String)>> {
     .collect::<result::Result<Vec<(u32, String)>, _>>()?;
 
     Ok(hash_paths)
+}
+
+fn report_duplicate_files(hash_paths: Vec<(u32, String)>) {
+    let mut current_hash_id = None;
+    let mut path_buffer = vec![];
+
+    for (hash_id, path) in hash_paths {
+        if let Some(current) = current_hash_id {
+            if current == hash_id {
+                path_buffer.push(path);
+            } else {
+                if path_buffer.len() > 1 {
+                    path_buffer.sort();
+                    info!("{}", path_buffer.join("\t"));
+                }
+
+                current_hash_id = Some(hash_id);
+                path_buffer = vec![path];
+            }
+        } else {
+            current_hash_id = Some(hash_id);
+            path_buffer.push(path);
+        }
+    }
+
+    // TODO: we're not showing anything left in the buffer.
 }
 
 // # Planning
