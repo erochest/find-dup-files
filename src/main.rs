@@ -2,14 +2,17 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::result;
+use std::thread;
 
 use clap_verbosity_flag::Verbosity;
+use crossbeam::channel;
 use data_encoding::HEXLOWER;
 use env_logger::Builder;
 use log::{debug, info, trace, Level};
 use ring::digest;
 use rusqlite::{params, Connection};
 use structopt::StructOpt;
+use tempfile::NamedTempFile;
 use walkdir::WalkDir;
 
 mod error;
@@ -28,11 +31,36 @@ fn main() -> Result<()> {
         )
         .init();
 
-    let cxn = args
+    let (db_worker_send, db_worker_recv) = channel::bounded(16);
+    let (wait_send, wait_recv) = channel::bounded(16);
+
+    let db_temp_file = if let Some(_) = args.storage {
+        None
+    } else {
+        Some(NamedTempFile::new()?)
+    };
+    let db_path: Option<PathBuf> = args
         .storage
+        .or_else(|| db_temp_file.map(|tf| tf.path().into()));
+    let create_db_path = db_path.clone();
+    let cxn = &create_db_path
         .map(Connection::open)
         .unwrap_or_else(Connection::open_in_memory)?;
     create_database(&cxn)?;
+
+    let worker_db_path = db_path.clone();
+    thread::spawn(move || {
+        let cxn = worker_db_path.map(Connection::open).unwrap_or_else(Connection::open_in_memory).unwrap();
+        loop {
+            match db_worker_recv.recv().unwrap() {
+                StoreHash::StoreHash(ref path, ref digest) => store_hash(&cxn, path, digest).unwrap(),
+                StoreHash::Done => {
+                    wait_send.send(ProcessEnd::Done).unwrap();
+                    break;
+                }
+            }
+        }
+    });
 
     for entry in WalkDir::new(&args.directory) {
         let entry = entry?;
@@ -44,11 +72,14 @@ fn main() -> Result<()> {
         let mut file = File::open(entry.path())?;
         let digest = hash_reader(&mut file, args.read_buffer)?;
 
-        store_hash(&cxn, entry.path(), &digest)?;
+        db_worker_send.send(StoreHash::StoreHash(entry.path().into(), digest))?;
     }
+    db_worker_send.send(StoreHash::Done)?;
+
+    // Block on `Done`.
+    wait_recv.recv()?;
 
     let hash_paths = read_hash_paths(&cxn)?;
-
     report_duplicate_files(hash_paths);
 
     Ok(())
@@ -113,6 +144,15 @@ fn hash_reader<R: Read>(reader: &mut R, capacity: usize) -> Result<digest::Diges
     }
 
     Ok(context.finish())
+}
+
+enum StoreHash {
+    StoreHash(PathBuf, digest::Digest),
+    Done,
+}
+
+enum ProcessEnd {
+    Done,
 }
 
 fn store_hash(cxn: &Connection, path: &Path, digest: &digest::Digest) -> Result<()> {
@@ -184,10 +224,10 @@ fn report_duplicate_files(hash_paths: Vec<(u32, String)>) {
 // # Planning
 //
 // Workers:
-// - *directory walker* sends files to read to the *file reader*;
-// - *file reader* reads a chunk of the file and sends it to one of the *hash workers*;
-// - *hash workers* take a file chunk and add it to the hash, queuing a request for the next chunk;
-// - *database worker* inserts completed hash information into the database.
+// - [ ] *directory walker* [singleton] sends files to read to the *file reader*;
+// - [ ] *file reader* [singleton] reads a chunk of the file and sends it to one of the *hash workers*;
+// - [ ] *hash workers* [pool] take a file chunk and add it to the hash, queuing a request for the next chunk;
+// - [x] *database worker* [singleton] inserts completed hash information into the database.
 //
 // Messages:
 // - *open file*

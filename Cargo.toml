@@ -17,6 +17,7 @@ log = "*"
 ring = "0.17.0-alpha.1"
 rusqlite = "0.21.0"
 structopt = "*"
+tempfile = "3.1.0"
 walkdir = "2.3.1"
 
 [dev-dependencies]
@@ -27,4 +28,4 @@ assert_cmd = "*"
 # predicates = "*"
 # rexpect = "*"
 spectral = "*"
-# tempfile = "*"
+# tempfile = "3.1.0"
