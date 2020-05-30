@@ -9,6 +9,8 @@ use crossbeam::channel;
 use data_encoding::HEXLOWER;
 use env_logger::Builder;
 use log::{debug, info, trace, Level};
+use rayon::ThreadPoolBuilder;
+use rayon::prelude::*;
 use ring::digest;
 use rusqlite::{params, Connection};
 use structopt::StructOpt;
@@ -48,19 +50,7 @@ fn main() -> Result<()> {
         .unwrap_or_else(Connection::open_in_memory)?;
     create_database(&cxn)?;
 
-    let worker_db_path = db_path.clone();
-    thread::spawn(move || {
-        let cxn = worker_db_path.map(Connection::open).unwrap_or_else(Connection::open_in_memory).unwrap();
-        loop {
-            match db_worker_recv.recv().unwrap() {
-                StoreHash::StoreHash(ref path, ref digest) => store_hash(&cxn, path, digest).unwrap(),
-                StoreHash::Done => {
-                    wait_send.send(ProcessEnd::Done).unwrap();
-                    break;
-                }
-            }
-        }
-    });
+    store_hash_worker(db_path.clone(), db_worker_recv, wait_send);
 
     for entry in WalkDir::new(&args.directory) {
         let entry = entry?;
@@ -153,6 +143,21 @@ enum StoreHash {
 
 enum ProcessEnd {
     Done,
+}
+
+fn store_hash_worker(db_path: Option<PathBuf>, db_worker_recv: channel::Receiver<StoreHash>, wait_send: channel::Sender<ProcessEnd>) {
+    thread::spawn(move || {
+        let cxn = db_path.map(Connection::open).unwrap_or_else(Connection::open_in_memory).unwrap();
+        loop {
+            match db_worker_recv.recv().unwrap() {
+                StoreHash::StoreHash(ref path, ref digest) => store_hash(&cxn, path, digest).unwrap(),
+                StoreHash::Done => {
+                    wait_send.send(ProcessEnd::Done).unwrap();
+                    break;
+                }
+            }
+        }
+    });
 }
 
 fn store_hash(cxn: &Connection, path: &Path, digest: &digest::Digest) -> Result<()> {
