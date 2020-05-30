@@ -9,8 +9,8 @@ use crossbeam::channel;
 use data_encoding::HEXLOWER;
 use env_logger::Builder;
 use log::{debug, info, trace, Level};
-use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
+use rayon::ThreadPoolBuilder;
 use ring::digest;
 use rusqlite::{params, Connection};
 use structopt::StructOpt;
@@ -74,7 +74,6 @@ fn main() -> Result<()> {
 
     Ok(())
 }
-
 
 #[derive(Debug, StructOpt)]
 struct Cli {
@@ -145,12 +144,21 @@ enum ProcessEnd {
     Done,
 }
 
-fn store_hash_worker(db_path: Option<PathBuf>, db_worker_recv: channel::Receiver<StoreHash>, wait_send: channel::Sender<ProcessEnd>) {
+fn store_hash_worker(
+    db_path: Option<PathBuf>,
+    db_worker_recv: channel::Receiver<StoreHash>,
+    wait_send: channel::Sender<ProcessEnd>,
+) {
     thread::spawn(move || {
-        let cxn = db_path.map(Connection::open).unwrap_or_else(Connection::open_in_memory).unwrap();
+        let cxn = db_path
+            .map(Connection::open)
+            .unwrap_or_else(Connection::open_in_memory)
+            .unwrap();
         loop {
             match db_worker_recv.recv().unwrap() {
-                StoreHash::StoreHash(ref path, ref digest) => store_hash(&cxn, path, digest).unwrap(),
+                StoreHash::StoreHash(ref path, ref digest) => {
+                    store_hash(&cxn, path, digest).unwrap()
+                }
                 StoreHash::Done => {
                     wait_send.send(ProcessEnd::Done).unwrap();
                     break;
@@ -186,13 +194,14 @@ fn read_hash_paths(cxn: &Connection) -> Result<Vec<(u32, String)>> {
         ORDER BY hash_id, pathname",
     )?;
 
-    let hash_paths = stmt.query_map(params![], |row| {
-        let hash_id: u32 = row.get(0)?;
-        let path: String = row.get(1)?;
-        trace!("retrieving {} / {}", hash_id, path);
-        Ok((hash_id, path))
-    })?
-    .collect::<result::Result<Vec<(u32, String)>, _>>()?;
+    let hash_paths = stmt
+        .query_map(params![], |row| {
+            let hash_id: u32 = row.get(0)?;
+            let path: String = row.get(1)?;
+            trace!("retrieving {} / {}", hash_id, path);
+            Ok((hash_id, path))
+        })?
+        .collect::<result::Result<Vec<(u32, String)>, _>>()?;
 
     Ok(hash_paths)
 }
