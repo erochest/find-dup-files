@@ -50,7 +50,7 @@ fn main() -> Result<()> {
         .unwrap_or_else(Connection::open_in_memory)?;
     create_database(&cxn)?;
 
-    store_hash_worker(db_path.clone(), db_worker_recv, wait_send);
+    spawn_store_hash_worker(db_path.clone(), db_worker_recv, wait_send);
 
     for entry in WalkDir::new(&args.directory) {
         let entry = entry?;
@@ -144,7 +144,7 @@ enum ProcessEnd {
     Done,
 }
 
-fn store_hash_worker(
+fn spawn_store_hash_worker(
     db_path: Option<PathBuf>,
     db_worker_recv: channel::Receiver<StoreHash>,
     wait_send: channel::Sender<ProcessEnd>,
