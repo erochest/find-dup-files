@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::result;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use clap_verbosity_flag::Verbosity;
@@ -33,6 +35,13 @@ fn main() -> Result<()> {
         )
         .init();
 
+    // let pool = ThreadPoolBuilder::new().build();
+
+    // TODO: base this off the number of CPUs.
+    let (hash_worker_send, hash_worker_recv): (
+        channel::Sender<HashChunk>,
+        channel::Receiver<HashChunk>,
+    ) = channel::bounded(8 * 4);
     let (db_worker_send, db_worker_recv) = channel::bounded(16);
     let (wait_send, wait_recv) = channel::bounded(16);
 
@@ -50,6 +59,7 @@ fn main() -> Result<()> {
         .unwrap_or_else(Connection::open_in_memory)?;
     create_database(&cxn)?;
 
+    spawn_hash_worker(hash_worker_recv, db_worker_send.clone());
     spawn_store_hash_worker(db_path.clone(), db_worker_recv, wait_send);
 
     for entry in WalkDir::new(&args.directory) {
@@ -59,12 +69,9 @@ fn main() -> Result<()> {
             continue;
         }
 
-        let mut file = File::open(entry.path())?;
-        let digest = hash_reader(&mut file, args.read_buffer)?;
-
-        db_worker_send.send(StoreHash::StoreHash(entry.path().into(), digest))?;
+        hash_reader(PathBuf::from(entry.path()), args.read_buffer, hash_worker_send.clone())?;
     }
-    db_worker_send.send(StoreHash::Done)?;
+    hash_worker_send.send(HashChunk::Done)?;
 
     // Block on `Done`.
     wait_recv.recv()?;
@@ -117,22 +124,82 @@ fn create_database(cxn: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn hash_reader<R: Read>(reader: &mut R, capacity: usize) -> Result<digest::Digest> {
-    let mut context = digest::Context::new(&digest::SHA256);
-    let mut buffer = Vec::with_capacity(capacity);
+fn hash_reader(path: PathBuf, capacity: usize, sender: channel::Sender<HashChunk>) -> Result<()> {
+    let mut file = File::open(path.clone())?;
+    let mut n = 0;
 
     loop {
+        let mut buffer = Vec::with_capacity(capacity);
         buffer.resize(capacity, 0);
-        let size = reader.read(buffer.as_mut_slice())?;
+        let size = file.read(buffer.as_mut_slice())?;
         if size == 0 {
+            debug!("sending FileDone {:?}", path);
+            sender.send(HashChunk::FileDone(path.clone()))?;
             break;
         }
         buffer.resize(size, 0);
 
-        context.update(&buffer);
+        debug!("sending HashChunk {} {:?}", n, path);
+        sender.send(HashChunk::HashChunk(path.clone(), n, Vec::from(buffer)))?;
+        n += 1;
     }
 
-    Ok(context.finish())
+    Ok(())
+}
+
+struct WorkingContext {
+    n: usize,
+    context: digest::Context,
+}
+
+fn spawn_hash_worker(receiver: channel::Receiver<HashChunk>, sender: channel::Sender<StoreHash>) {
+    // let mut in_process = Arc::new(Mutex::new(HashMap::new()));
+    debug!("spawning hash worker");
+    thread::spawn(move || {
+        let mut in_process: HashMap<PathBuf, WorkingContext> = HashMap::new();
+
+        loop {
+            match receiver.recv().unwrap() {
+                HashChunk::HashChunk(ref path, n, ref buffer) => {
+                    debug!("received HashChunk {} {:?}", n, path);
+                    in_process.entry(path.clone())
+                        .and_modify(|working_context| {
+                            assert!(working_context.n == (n - 1));
+                            (*working_context).n = n;
+                            working_context.context.update(buffer);
+                        })
+                        .or_insert_with(|| {
+                            assert!(n == 0);
+                            let mut context = digest::Context::new(&digest::SHA256);
+                            context.update(buffer);
+                            WorkingContext { n, context }
+                        });
+                },
+
+                HashChunk::FileDone(path) => {
+                    debug!("received FileDone {:?}", path);
+                    if let Some(working_context) = in_process.remove(&path) {
+                        let digest = working_context.context.finish();
+                        debug!("sending StoreHash {:?}", path);
+                        sender.send(StoreHash::StoreHash(path, digest)).unwrap();
+                    }
+                },
+
+                HashChunk::Done => {
+                    debug!("received HashChunk::Done");
+                    debug!("sending StoreHash::Done");
+                    sender.send(StoreHash::Done).unwrap();
+                    break;
+                },
+            }
+        }
+    });
+}
+
+enum HashChunk {
+    HashChunk(PathBuf, usize, Vec<u8>),
+    FileDone(PathBuf),
+    Done,
 }
 
 enum StoreHash {
@@ -149,6 +216,7 @@ fn spawn_store_hash_worker(
     db_worker_recv: channel::Receiver<StoreHash>,
     wait_send: channel::Sender<ProcessEnd>,
 ) {
+    debug!("spawning store hash worker");
     thread::spawn(move || {
         let cxn = db_path
             .map(Connection::open)
@@ -157,9 +225,11 @@ fn spawn_store_hash_worker(
         loop {
             match db_worker_recv.recv().unwrap() {
                 StoreHash::StoreHash(ref path, ref digest) => {
+                    debug!("received StoreHash {:?}", path);
                     store_hash(&cxn, path, digest).unwrap()
                 }
                 StoreHash::Done => {
+                    debug!("received StoreHash::Done");
                     wait_send.send(ProcessEnd::Done).unwrap();
                     break;
                 }
@@ -240,7 +310,7 @@ fn report_duplicate_files(hash_paths: Vec<(u32, String)>) {
 // Workers:
 // - [ ] *directory walker* [singleton] sends files to read to the *file reader*;
 // - [ ] *file reader* [singleton] reads a chunk of the file and sends it to one of the *hash workers*;
-// - [ ] *hash workers* [pool] take a file chunk and add it to the hash, queuing a request for the next chunk;
+// - [x] *hash workers* [pool] take a file chunk and add it to the hash, queuing a request for the next chunk;
 // - [x] *database worker* [singleton] inserts completed hash information into the database.
 //
 // Messages:
