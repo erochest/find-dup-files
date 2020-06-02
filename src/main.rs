@@ -3,7 +3,6 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::result;
-use std::sync::{Arc, Mutex};
 use std::thread;
 
 use clap_verbosity_flag::Verbosity;
@@ -11,8 +10,6 @@ use crossbeam::channel;
 use data_encoding::HEXLOWER;
 use env_logger::Builder;
 use log::{debug, info, trace, Level};
-use rayon::prelude::*;
-use rayon::ThreadPoolBuilder;
 use ring::digest;
 use rusqlite::{params, Connection};
 use structopt::StructOpt;
@@ -35,13 +32,10 @@ fn main() -> Result<()> {
         )
         .init();
 
-    // let pool = ThreadPoolBuilder::new().build();
-
-    // TODO: base this off the number of CPUs.
     let (hash_worker_send, hash_worker_recv): (
         channel::Sender<HashChunk>,
         channel::Receiver<HashChunk>,
-    ) = channel::bounded(8 * 4);
+    ) = channel::bounded(16);
     let (db_worker_send, db_worker_recv) = channel::bounded(16);
     let (wait_send, wait_recv) = channel::bounded(16);
 
@@ -153,7 +147,6 @@ struct WorkingContext {
 }
 
 fn spawn_hash_worker(receiver: channel::Receiver<HashChunk>, sender: channel::Sender<StoreHash>) {
-    // let mut in_process = Arc::new(Mutex::new(HashMap::new()));
     debug!("spawning hash worker");
     thread::spawn(move || {
         let mut in_process: HashMap<PathBuf, WorkingContext> = HashMap::new();
