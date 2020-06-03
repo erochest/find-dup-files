@@ -122,6 +122,8 @@ fn hash_reader(path: PathBuf, capacity: usize, sender: channel::Sender<HashChunk
     let mut file = File::open(path.clone())?;
     let mut n = 0;
 
+    info!("reading {:?}", path);
+
     loop {
         let mut buffer = Vec::with_capacity(capacity);
         buffer.resize(capacity, 0);
