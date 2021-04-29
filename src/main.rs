@@ -57,6 +57,11 @@ fn main() -> Result<()> {
     spawn_store_hash_worker(db_path.clone(), db_worker_recv, wait_send);
 
     for entry in WalkDir::new(&args.directory) {
+        if let Err(ref err) = entry {
+            if let Some(_) = err.io_error() {
+                continue;
+            }
+        }
         let entry = entry?;
         let metadata = entry.metadata()?;
         if metadata.len() == 0 || !metadata.is_file() {

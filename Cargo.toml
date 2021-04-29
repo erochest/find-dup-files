@@ -1,6 +1,6 @@
 [package]
 name = "find-dup-files"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Eric Rochester <erochest@gmail.com>"]
 edition = "2018"
 
